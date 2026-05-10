@@ -1,42 +1,53 @@
 from datetime import datetime, timedelta
 
-def get_available_slots(opening_hours, busy_slots, service_duration, buffer=15):
+def get_available_slots(opening_hours, busy_slots, service_duration, selected_date_obj, buffer=15):
     """
-    Calcola gli slot disponibili.
     opening_hours: ["09:00", "18:00"]
-    busy_slots: lista di tuple (start, end) da google_cal
-    service_duration: durata in minuti
+    busy_slots: lista di tuple (start, end)
+    selected_date_obj: oggetto datetime.date (il giorno scelto dall'utente)
     """
     slots = []
     
-    # 1. Definiamo i confini della giornata lavorativa
-    day_start_str, day_end_str = opening_hours
-    # Esempio semplificato: assumiamo che start_date sia oggi
+    # 1. Definiamo i confini usando la data selezionata, non "now"
+    try:
+        day_start_str, day_end_str = opening_hours
+    except (ValueError, TypeError):
+        # Protezione se opening_hours non è una lista di 2 elementi
+        return []
+
+    # Creiamo il punto di inizio e fine per il GIORNO SCELTO
+    current_time = datetime.combine(
+        selected_date_obj, 
+        datetime.strptime(day_start_str, "%H:%M").time()
+    )
+    end_working_day = datetime.combine(
+        selected_date_obj, 
+        datetime.strptime(day_end_str, "%H:%M").time()
+    )
+
     now = datetime.now()
-    current_time = now.replace(hour=int(day_start_str[:2]), minute=int(day_start_str[3:]), second=0, microsecond=0)
-    end_working_day = now.replace(hour=int(day_end_str[:2]), minute=int(day_end_str[3:]), second=0, microsecond=0)
 
     # 2. Iteriamo sulla giornata
     while current_time + timedelta(minutes=service_duration) <= end_working_day:
         slot_start = current_time
         slot_end = current_time + timedelta(minutes=service_duration)
         
-        # 3. Verifichiamo se lo slot collide con eventi Google
         is_free = True
         for b_start, b_end in busy_slots:
-            # Rimuoviamo il fuso orario per il confronto se necessario
-            b_start = b_start.replace(tzinfo=None)
-            b_end = b_end.replace(tzinfo=None)
+            # Rimuoviamo fuso orario per confronto
+            if b_start.tzinfo: b_start = b_start.replace(tzinfo=None)
+            if b_end.tzinfo: b_end = b_end.replace(tzinfo=None)
             
-            # Condizione di sovrapposizione
+            # Controllo sovrapposizione
             if not (slot_end <= b_start or slot_start >= b_end):
                 is_free = False
                 break
         
-        if is_free and slot_start > datetime.now(): # Non mostrare slot nel passato
+        # Non mostrare slot passati (confronto con l'ora esatta di adesso)
+        if is_free and slot_start > now:
             slots.append(slot_start.strftime("%H:%M"))
         
-        # 4. Avanziamo (es. di 30 minuti o della durata servizio + buffer)
+        # Avanzamento fisso di 30 min (o puoi usare service_duration)
         current_time += timedelta(minutes=30)
         
     return slots
