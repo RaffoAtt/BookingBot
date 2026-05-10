@@ -69,54 +69,72 @@ async def process_time(callback_query: types.CallbackQuery, state: FSMContext):
     await BookingStates.entering_name.set()
     await callback_query.answer()
 
-# --- LOGICA REALE: SALVATAGGIO DB & GOOGLE CALENDAR ---
 async def process_name(message: types.Message, state: FSMContext):
     user_name = message.text
     data = await state.get_data()
     db = SessionLocal()
     
     try:
-        # Recupero Business e Servizio
+        # 1. Recupero Business e Servizio (Usando UUID come stringhe)
         biz = db.query(Business).first()
-        # Assicurati che l'ID sia del tipo corretto (int o str)
-        s_id = int(data['service_id']) 
-        service = db.query(Service).filter(Service.id == s_id).first()
+        service_id = data['service_id'] # Niente int(), è un UUID
+        service = db.query(Service).filter(Service.id == service_id).first()
         
-        # Creazione Booking
-        start_dt = datetime.strptime(f"{data['date']} {data['chosen_time']}", "%Y-%m-%d %H:%M")
+        if not service:
+            await message.answer("Errore: Servizio non trovato.")
+            return
+
+        # 2. Calcolo tempi (Data, Inizio, Fine)
+        # Il tuo schema vuole: booking_date (date), start_time (time), end_time (time)
+        selected_date = datetime.strptime(data['date'], "%Y-%m-%d").date()
+        start_t = datetime.strptime(data['chosen_time'], "%H:%M").time()
         
+        # Calcoliamo la fine in base alla durata del servizio (es. 30 min)
+        # Usiamo datetime per fare i calcoli e poi estraiamo .time()
+        dummy_dt = datetime.combine(selected_date, start_t)
+        end_dt = dummy_dt + timedelta(minutes=service.duration)
+        end_t = end_dt.time()
+
+        # 3. Creazione Booking secondo il tuo schema SQL
         new_booking = Booking(
             business_id=biz.id,
             service_id=service.id,
             customer_name=user_name,
-            start_time=start_dt
+            booking_date=selected_date,  # Colonna: booking_date
+            start_time=start_t,          # Colonna: start_time
+            end_time=end_t,              # Colonna: end_time (Obbligatoria!)
+            status='confirmed'
         )
         
         db.add(new_booking)
-        db.commit() 
-        
-        # Sincronizzazione Google (dentro un try separato per non bloccare tutto)
+        db.commit()
+        db.refresh(new_booking)
+
+        # 4. Google Calendar (opzionale)
         sync_status = ""
         if biz.google_creds:
             try:
+                # Passiamo l'oggetto booking completo
                 google_cal.create_event(biz.google_creds, new_booking, service.name)
                 sync_status = "\n✅ Sincronizzato con Google Calendar."
-            except Exception as g_err:
-                print(f"Errore Google: {g_err}")
-                sync_status = "\n⚠️ Nota: Errore sincronizzazione calendario."
+            except Exception as ge:
+                print(f"Google Error: {ge}")
+                sync_status = "\n⚠️ Errore sincronizzazione calendario."
 
         await message.answer(
-            f"✅ **Prenotazione Confermata!**\n\n"
+            f"✅ **Prenotazione completata!**\n\n"
             f"👤 Cliente: {user_name}\n"
-            f"🔹 Servizio: {service.name}\n"
+            f"🔹 Servizio: {service.name} ({service.duration} min)\n"
             f"📅 Data: {data['date']}\n"
-            f"🕒 Ore: {data['chosen_time']}"
+            f"🕒 Orario: {data['chosen_time']} - {end_t.strftime('%H:%M')}"
             f"{sync_status}"
         )
         await state.finish()
 
     except Exception as e:
-        print(f"ERRORE CRITICO: {e}") # Guarda questo nei log di Railway!
-        await message.answer("Si è verificato un errore durante il salvataggio. Riprova.")
+        print(f"ERRORE CRITICO: {e}")
+        import traceback
+        traceback.print_exc()
+        await message.answer("Si è verificato un errore nel salvataggio. Riprova.")
     finally:
         db.close()
