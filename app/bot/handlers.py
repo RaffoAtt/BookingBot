@@ -1,35 +1,35 @@
 from aiogram import types
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from .keyboards import get_days_kb
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from datetime import datetime, timedelta
 import logging
 
 from app.database import SessionLocal, Service, Business, Booking
 from app.services import google_cal, scheduler
-from .keyboards import get_services_kb, get_slots_kb
+from .keyboards import get_services_kb, get_slots_kb, get_days_kb
 
 class BookingStates(StatesGroup):
     choosing_service = State()
     choosing_date = State()
     choosing_time = State()
     entering_name = State()
+    entering_phone = State() # Stato per il numero di telefono
 
-# --- START & SERVICE SELECTION (Identici a prima) ---
+# --- START & SERVICE SELECTION ---
 async def cmd_start(message: types.Message):
     db = SessionLocal()
     try:
         services = db.query(Service).all()
-        await message.answer("Scegli un servizio:", reply_markup=get_services_kb(services))
+        await message.answer("Benvenuto! Scegli un servizio per prenotare:", reply_markup=get_services_kb(services))
         await BookingStates.choosing_service.set()
-    finally: db.close()
+    finally: 
+        db.close()
 
 async def process_service(callback_query: types.CallbackQuery, state: FSMContext):
     service_id = callback_query.data.split("_")[1]
     await state.update_data(service_id=service_id)
     
-    # Usiamo la nuova tastiera dinamica
     await callback_query.message.answer(
         "📅 Per quando vuoi prenotare? (Prossimi 7 giorni):", 
         reply_markup=get_days_kb() 
@@ -39,7 +39,6 @@ async def process_service(callback_query: types.CallbackQuery, state: FSMContext
 
 # --- DATE SELECTION ---
 async def process_date(callback_query: types.CallbackQuery, state: FSMContext):
-    # callback_query.data sarà tipo "date_2026-05-10"
     date_str = callback_query.data.split("_")[1]
     selected_date = datetime.strptime(date_str, "%Y-%m-%d")
     
@@ -51,10 +50,8 @@ async def process_date(callback_query: types.CallbackQuery, state: FSMContext):
         service = db.query(Service).filter(Service.id == user_data['service_id']).first()
         biz = db.query(Business).first()
         
-        # Recupero impegni Google
         busy = google_cal.fetch_busy_slots(biz.google_creds, selected_date) if biz.google_creds else []
         
-        # Orari di apertura
         day_name = selected_date.strftime("%a").lower()[:3]
         if isinstance(biz.opening_hours, dict):
             day_schedule = biz.opening_hours.get(day_name)
@@ -65,7 +62,6 @@ async def process_date(callback_query: types.CallbackQuery, state: FSMContext):
             await callback_query.message.answer(f"Spiacenti, siamo chiusi il {selected_date.strftime('%d/%m')}.")
             return
 
-        # Generazione slot con la logica corretta dello scheduler aggiornato
         slots = scheduler.get_available_slots(
             day_schedule, 
             busy, 
@@ -84,7 +80,7 @@ async def process_date(callback_query: types.CallbackQuery, state: FSMContext):
         await BookingStates.choosing_time.set()
         
     except Exception as e:
-        logging.error(f"Errore: {e}")
+        logging.error(f"Errore nel recupero slot: {e}")
         await callback_query.message.answer("Errore nel recupero orari.")
     finally:
         db.close()
@@ -94,44 +90,59 @@ async def process_date(callback_query: types.CallbackQuery, state: FSMContext):
 async def process_time(callback_query: types.CallbackQuery, state: FSMContext):
     selected_time = callback_query.data.split("_")[2]
     await state.update_data(chosen_time=selected_time)
-    await callback_query.message.answer(f"Selezionato: {selected_time}. Inserisci il tuo Nome:")
+    
+    await callback_query.message.answer("Perfetto! Ora inserisci il tuo **Nome e Cognome**:")
     await BookingStates.entering_name.set()
     await callback_query.answer()
 
+# --- NAME SELECTION ---
 async def process_name(message: types.Message, state: FSMContext):
-    user_name = message.text
+    await state.update_data(customer_name=message.text)
+    
+    # Tastiera speciale per richiedere il contatto
+    kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    kb.add(KeyboardButton("📱 Condividi il mio numero", request_contact=True))
+    
+    await message.answer(
+        "Grazie! Infine, clicca sul pulsante qui sotto per inviarci il tuo **numero di telefono**:",
+        reply_markup=kb
+    )
+    await BookingStates.entering_phone.set()
+
+# --- PHONE SELECTION & FINAL SAVING ---
+async def process_phone(message: types.Message, state: FSMContext):
+    # Gestiamo sia il pulsante 'condividi contatto' che il testo manuale
+    if message.contact:
+        phone = message.contact.phone_number
+    else:
+        phone = message.text
+
     data = await state.get_data()
     db = SessionLocal()
     
     try:
-        # 1. Recupero Business e Servizio (Usando UUID come stringhe)
         biz = db.query(Business).first()
-        service_id = data['service_id'] # Niente int(), è un UUID
-        service = db.query(Service).filter(Service.id == service_id).first()
+        service = db.query(Service).filter(Service.id == data['service_id']).first()
         
         if not service:
             await message.answer("Errore: Servizio non trovato.")
             return
 
-        # 2. Calcolo tempi (Data, Inizio, Fine)
-        # Il tuo schema vuole: booking_date (date), start_time (time), end_time (time)
+        # Calcolo orari per il DB
         selected_date = datetime.strptime(data['date'], "%Y-%m-%d").date()
         start_t = datetime.strptime(data['chosen_time'], "%H:%M").time()
-        
-        # Calcoliamo la fine in base alla durata del servizio (es. 30 min)
-        # Usiamo datetime per fare i calcoli e poi estraiamo .time()
         dummy_dt = datetime.combine(selected_date, start_t)
-        end_dt = dummy_dt + timedelta(minutes=service.duration)
-        end_t = end_dt.time()
+        end_t = (dummy_dt + timedelta(minutes=service.duration)).time()
 
-        # 3. Creazione Booking secondo il tuo schema SQL
+        # Creazione record nel Database
         new_booking = Booking(
             business_id=biz.id,
             service_id=service.id,
-            customer_name=user_name,
-            booking_date=selected_date,  # Colonna: booking_date
-            start_time=start_t,          # Colonna: start_time
-            end_time=end_t,              # Colonna: end_time (Obbligatoria!)
+            customer_name=data['customer_name'],
+            customer_phone=phone,
+            booking_date=selected_date,
+            start_time=start_t,
+            end_time=end_t,
             status='confirmed'
         )
         
@@ -139,31 +150,30 @@ async def process_name(message: types.Message, state: FSMContext):
         db.commit()
         db.refresh(new_booking)
 
-        # 4. Google Calendar (opzionale)
+        # Google Calendar
         sync_status = ""
         if biz.google_creds:
             try:
-                # Passiamo l'oggetto booking completo
                 google_cal.create_event(biz.google_creds, new_booking, service.name)
                 sync_status = "\n✅ Sincronizzato con Google Calendar."
             except Exception as ge:
-                print(f"Google Error: {ge}")
-                sync_status = "\n⚠️ Errore sincronizzazione calendario."
+                logging.error(f"Google Error: {ge}")
+                sync_status = "\n⚠️ Nota: Calendario non aggiornato."
 
         await message.answer(
-            f"✅ **Prenotazione completata!**\n\n"
-            f"👤 Cliente: {user_name}\n"
-            f"🔹 Servizio: {service.name} ({service.duration} min)\n"
+            f"✅ **Prenotazione confermata!**\n\n"
+            f"👤 Cliente: {data['customer_name']}\n"
+            f"📞 Telefono: {phone}\n"
+            f"🔹 Servizio: {service.name}\n"
             f"📅 Data: {data['date']}\n"
             f"🕒 Orario: {data['chosen_time']} - {end_t.strftime('%H:%M')}"
-            f"{sync_status}"
+            f"{sync_status}",
+            reply_markup=ReplyKeyboardRemove() # Rimuove il pulsante del contatto
         )
         await state.finish()
 
     except Exception as e:
-        print(f"ERRORE CRITICO: {e}")
-        import traceback
-        traceback.print_exc()
-        await message.answer("Si è verificato un errore nel salvataggio. Riprova.")
+        logging.error(f"ERRORE CRITICO: {e}")
+        await message.answer("Si è verificato un errore nel salvataggio. Riprova con /start.")
     finally:
         db.close()
