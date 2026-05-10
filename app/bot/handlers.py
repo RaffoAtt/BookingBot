@@ -27,11 +27,12 @@ async def cmd_start(message: types.Message):
 async def process_service(callback_query: types.CallbackQuery, state: FSMContext):
     service_id = callback_query.data.split("_")[1]
     await state.update_data(service_id=service_id)
-    kb = InlineKeyboardMarkup(row_width=2).add(
-        InlineKeyboardButton("Oggi", callback_data="date_today"),
-        InlineKeyboardButton("Domani", callback_data="date_tomorrow")
+    
+    # Usiamo la nuova tastiera dinamica
+    await callback_query.message.answer(
+        "📅 Per quando vuoi prenotare? (Prossimi 7 giorni):", 
+        reply_markup=get_days_kb() 
     )
-    await callback_query.message.answer("Scegli il giorno:", reply_markup=kb)
     await BookingStates.choosing_date.set()
     await callback_query.answer()
 
