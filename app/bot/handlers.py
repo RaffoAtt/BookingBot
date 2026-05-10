@@ -1,9 +1,12 @@
 from aiogram import Dispatcher, types
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
+# AGGIUNGI QUESTA RIGA:
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton 
 from app.database import SessionLocal, Service, Business
 from app.services import google_cal, scheduler
-from datetime import datetime
+# MODIFICA QUESTA RIGA per aggiungere timedelta:
+from datetime import datetime, timedelta
 
 class BookingStates(StatesGroup):
     choosing_service = State()
@@ -24,7 +27,7 @@ async def process_service(callback_query: types.CallbackQuery, state: FSMContext
     service_id = callback_query.data.split("_")[1]
     await state.update_data(service_id=service_id)
     
-    # Mostriamo date (es. oggi e domani per semplicità)
+    # Ora InlineKeyboardMarkup funzionerà perché è stato importato sopra
     kb = InlineKeyboardMarkup().add(
         InlineKeyboardButton("Oggi", callback_data="date_today"),
         InlineKeyboardButton("Domani", callback_data="date_tomorrow")
