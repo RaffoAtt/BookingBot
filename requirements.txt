@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+aiogram==2.25.1
+sqlalchemy
+psycopg2-binary
+python-dotenv
+google-api-python-client
+google-auth-oauthlib
