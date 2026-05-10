@@ -29,21 +29,44 @@ def fetch_busy_slots(creds_json, start_date):
                      datetime.fromisoformat(end.replace('Z', '+00:00'))))
     return busy
 
-def create_event(creds_dict, booking, service_name):
-    creds = Credentials.from_authorized_user_info(creds_dict)
+from googleapiclient.discovery import build
+from google.oauth2.credentials import Credentials
+from datetime import datetime, timedelta
+
+def create_event(biz_creds, booking, service_name):
+    """
+    biz_creds: i dati JSON salvati nel DB dopo l'autenticazione
+    booking: l'oggetto Booking dal tuo database
+    """
+    # Trasforma i dati del DB in credenziali valide
+    creds = Credentials.from_authorized_user_info(biz_creds)
     service = build('calendar', 'v3', credentials=creds)
-    
-    # Prepariamo i dati in formato ISO (richiesto da Google)
-    # Esempio: 2026-05-10T10:00:00
-    start_iso = datetime.combine(booking.booking_date, booking.start_time).isoformat()
-    end_iso = datetime.combine(booking.booking_date, booking.end_time).isoformat()
+
+    # Formatta le date per Google (ISO 8601)
+    # Uniamo booking_date e start_time
+    start_dt = datetime.combine(booking.booking_date, booking.start_time)
+    end_dt = datetime.combine(booking.booking_date, booking.end_time)
 
     event = {
-        'summary': f'Booking: {booking.customer_name}',
+        'summary': f'Prenotazione: {booking.customer_name}',
+        'location': 'Tua Sede',
         'description': f'Servizio: {service_name}',
-        'start': {'dateTime': start_iso, 'timeZone': 'Europe/Rome'},
-        'end': {'dateTime': end_iso, 'timeZone': 'Europe/Rome'},
+        'start': {
+            'dateTime': start_dt.isoformat(),
+            'timeZone': 'Europe/Rome',
+        },
+        'end': {
+            'dateTime': end_dt.isoformat(),
+            'timeZone': 'Europe/Rome',
+        },
+        'reminders': {
+            'useDefault': True,
+        },
     }
-    
-    # Inserimento reale sul calendario
-    return service.events().insert(calendarId='primary', body=event).execute()
+
+    try:
+        event_result = service.events().insert(calendarId='primary', body=event).execute()
+        return event_result.get('id')
+    except Exception as e:
+        print(f"Errore Google Calendar: {e}")
+        return None
