@@ -20,7 +20,9 @@ from app.bot.handlers import (
     BookingStates
 )
 
-os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'app = FastAPI()
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
+app = FastAPI()
 
 # Caricamento variabili
 TOKEN = os.getenv("MASTER_BOT_TOKEN")
