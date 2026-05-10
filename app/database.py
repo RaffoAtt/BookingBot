@@ -42,6 +42,7 @@ class Booking(Base):
     start_time = Column(Time, nullable=False)
     end_time = Column(Time, nullable=False)
     status = Column(String, default="confirmed")
+    customer_phone = Column(String, nullable=True)
 
 # --- FUNZIONE PER INIZIALIZZARE IL DB ---
 def init_db():
