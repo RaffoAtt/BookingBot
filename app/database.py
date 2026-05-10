@@ -27,13 +27,15 @@ class Service(Base):
 
 class Booking(Base):
     __tablename__ = "bookings"
-    id = Column(Integer, primary_key=True)
-    business_id = Column(String, ForeignKey("businesses.id"))
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    business_id = Column(UUID(as_uuid=True), ForeignKey("businesses.id"))
+    service_id = Column(UUID(as_uuid=True), ForeignKey("services.id"))
     customer_name = Column(String)
-    start_time = Column(DateTime)
-    end_time = Column(DateTime)
-    google_event_id = Column(String)
-
+    booking_date = Column(Date)       # Deve essere Date
+    start_time = Column(Time)         # Deve essere Time
+    end_time = Column(Time)           # Deve essere Time
+    status = Column(String, default="confirmed")
+    
 # Funzione per creare le tabelle (da lanciare una volta)
 def init_db():
     Base.metadata.create_all(bind=engine)
