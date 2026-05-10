@@ -37,26 +37,58 @@ async def process_service(callback_query: types.CallbackQuery, state: FSMContext
 
 # --- DATE SELECTION ---
 async def process_date(callback_query: types.CallbackQuery, state: FSMContext):
-    selected_date = datetime.now() if "today" in callback_query.data else datetime.now() + timedelta(days=1)
+    # Determina la data
+    if "today" in callback_query.data:
+        selected_date = datetime.now()
+    else:
+        selected_date = datetime.now() + timedelta(days=1)
+    
     date_str = selected_date.strftime("%Y-%m-%d")
     await state.update_data(date=date_str)
     
     db = SessionLocal()
     try:
+        # Recupera dati necessari
+        user_data = await state.get_data()
+        service = db.query(Service).filter(Service.id == user_data['service_id']).first()
         biz = db.query(Business).first()
+        
+        # 1. Recupera impegni da Google
         busy = google_cal.fetch_busy_slots(biz.google_creds, selected_date) if biz.google_creds else []
         
-        # Logica per estrarre orario da lista o dizionario
+        # 2. Determina orario di apertura
         day_name = selected_date.strftime("%a").lower()[:3]
-        day_schedule = biz.opening_hours.get(day_name) if isinstance(biz.opening_hours, dict) else biz.opening_hours
+        # Se opening_hours è un dict per giorni (es: {"mon": ["09:00", "18:00"]})
+        if isinstance(biz.opening_hours, dict):
+            day_schedule = biz.opening_hours.get(day_name)
+        else:
+            day_schedule = biz.opening_hours # Se è una lista fissa ["09:00", "18:00"]
 
         if not day_schedule:
-            await callback_query.message.answer("Chiuso in questa data.")
+            await callback_query.message.answer("Spiacenti, siamo chiusi in questa data.")
             return
 
-        slots = scheduler.get_available_slots(day_schedule, busy, 30)
-        await callback_query.message.answer(f"Orari per il {date_str}:", reply_markup=get_slots_kb(slots, date_str))
+        # 3. CHIAMA LO SCHEDULER (Nota l'aggiunta di selected_date.date() e service.duration)
+        slots = scheduler.get_available_slots(
+            day_schedule, 
+            busy, 
+            service.duration, 
+            selected_date.date()
+        )
+        
+        if not slots:
+            await callback_query.message.answer("Non ci sono orari disponibili (o l'orario di lavoro è terminato).")
+            return
+
+        await callback_query.message.answer(
+            f"⏰ Orari disponibili per il {date_str}:", 
+            reply_markup=get_slots_kb(slots, date_str)
+        )
         await BookingStates.choosing_time.set()
+        
+    except Exception as e:
+        logging.error(f"Errore nel calcolo slot: {e}")
+        await callback_query.message.answer("Errore tecnico nel recupero orari.")
     finally:
         db.close()
         await callback_query.answer()
