@@ -1,28 +1,30 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.utils.keyboard import InlineKeyboardBuilder # <-- Serve questo per costruire la tastiera
 
 def get_services_kb(services):
-    builder = InlineKeyboardBuilder() # Inizializzi il builder
+    # In Aiogram 2 si definisce row_width nell'inizializzazione
+    keyboard = InlineKeyboardMarkup(row_width=1)
     
     for s in services:
-        builder.row(InlineKeyboardButton(
+        # Usiamo il metodo .add() che appartiene all'oggetto InlineKeyboardMarkup
+        keyboard.add(InlineKeyboardButton(
             text=f"{s.name} - {s.price}€", 
             callback_data=f"srv_{s.id}"
         ))
     
-    return builder.as_markup() # Trasforma il builder in InlineKeyboardMarkup
+    return keyboard
 
 def get_slots_kb(slots, date_str):
-    builder = InlineKeyboardBuilder()
+    keyboard = InlineKeyboardMarkup(row_width=3)
     
-    # Creiamo i bottoni
-    for s in slots:
-        builder.add(InlineKeyboardButton(
+    # Creiamo la lista di bottoni
+    buttons = [
+        InlineKeyboardButton(
             text=s, 
             callback_data=f"time_{date_str}_{s}"
-        ))
+        ) for s in slots
+    ]
     
-    # Impostiamo il layout a 3 colonne
-    builder.adjust(3)
+    # Usiamo l'asterisco (*) per scompattare la lista dentro .add()
+    keyboard.add(*buttons)
     
-    return builder.as_markup()
+    return keyboard
