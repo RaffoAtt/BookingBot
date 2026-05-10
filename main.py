@@ -3,38 +3,44 @@ import uvicorn
 from fastapi import FastAPI, Request
 from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
-
-# Import degli handler - Assicurati che il percorso app/bot/handlers.py esista
 from app.bot.handlers import cmd_start, process_service, process_date, BookingStates
 
 app = FastAPI()
 
-# 1. Recupero Variabili d'Ambiente
 TOKEN = os.getenv("MASTER_BOT_TOKEN")
 BASE_URL = os.getenv("BASE_URL")
 
-# 2. Inizializzazione Bot e Dispatcher
 bot = Bot(token=TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 
-# 3. Registrazione Handlers
 dp.register_message_handler(cmd_start, commands=['start'], state="*")
 dp.register_callback_query_handler(process_service, lambda c: c.data and c.data.startswith('srv_'), state=BookingStates.choosing_service)
 dp.register_callback_query_handler(process_date, lambda c: c.data and c.data.startswith('date_'), state=BookingStates.choosing_date)
 
 @app.on_event("startup")
 async def on_startup():
-    print("--- Esecuzione Startup ---")
-    if not BASE_URL:
-        print("⚠️ BASE_URL non trovato nelle variabili d'ambiente.")
-        return
-        
-    try:
+    if BASE_URL:
         webhook_url = f"{BASE_URL.strip().rstrip('/')}/webhook"
-        print(f"Tentativo impostazione webhook: {webhook_url}")
         await bot.set_webhook(webhook_url)
-        print("✅ Webhook impostato correttamente")
+        print(f"Webhook set to: {webhook_url}")
+
+@app.post("/webhook")
+async def telegram_webhook(request: Request):
+    data = await request.json()
+    update = types.Update.to_object(data)
+    Bot.set_current(bot)
+    Dispatcher.set_current(dp)
+    await dp.process_update(update)
+    return {"status": "ok"}
+
+@app.get("/")
+def index():
+    return {"status": "online"}
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)        print("✅ Webhook impostato correttamente")
     except Exception as e:
         print(f"❌ Errore durante set_webhook: {e}")
 
@@ -143,7 +149,5 @@ def index():
     return {"message": "Booking Bot SaaS is running"}
 
 if __name__ == "__main__":
-    # Prendi la porta assegnata da Railway
     port = int(os.environ.get("PORT", 8000))
-    # Avvia il server
     uvicorn.run(app, host="0.0.0.0", port=port)
