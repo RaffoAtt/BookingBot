@@ -76,12 +76,15 @@ async def process_name(message: types.Message, state: FSMContext):
     db = SessionLocal()
     
     try:
-        # 1. Recupero Dati Business e Servizio
+        # Recupero Business e Servizio
         biz = db.query(Business).first()
-        service = db.query(Service).filter(Service.id == int(data['service_id'])).first()
+        # Assicurati che l'ID sia del tipo corretto (int o str)
+        s_id = int(data['service_id']) 
+        service = db.query(Service).filter(Service.id == s_id).first()
         
-        # 2. Creazione Oggetto Booking (DB Locale)
+        # Creazione Booking
         start_dt = datetime.strptime(f"{data['date']} {data['chosen_time']}", "%Y-%m-%d %H:%M")
+        
         new_booking = Booking(
             business_id=biz.id,
             service_id=service.id,
@@ -90,31 +93,30 @@ async def process_name(message: types.Message, state: FSMContext):
         )
         
         db.add(new_booking)
-        db.commit() # Salvataggio su Postgres
-        db.refresh(new_booking)
-
-        # 3. Sincronizzazione Google Calendar
+        db.commit() 
+        
+        # Sincronizzazione Google (dentro un try separato per non bloccare tutto)
+        sync_status = ""
         if biz.google_creds:
             try:
                 google_cal.create_event(biz.google_creds, new_booking, service.name)
-                sync_status = "✅ Sincronizzato con Google Calendar."
-            except Exception as e:
-                logging.error(f"Errore Google: {e}")
-                sync_status = "⚠️ Salvato localmente, errore sincronizzazione Google."
-        else:
-            sync_status = ""
+                sync_status = "\n✅ Sincronizzato con Google Calendar."
+            except Exception as g_err:
+                print(f"Errore Google: {g_err}")
+                sync_status = "\n⚠️ Nota: Errore sincronizzazione calendario."
 
-        # 4. Risposta Finale
         await message.answer(
-            f"Prenotazione confermata per **{user_name}**!\n"
-            f"🔹 {service.name}\n"
-            f"📅 {data['date']} ore {data['chosen_time']}\n\n"
+            f"✅ **Prenotazione Confermata!**\n\n"
+            f"👤 Cliente: {user_name}\n"
+            f"🔹 Servizio: {service.name}\n"
+            f"📅 Data: {data['date']}\n"
+            f"🕒 Ore: {data['chosen_time']}"
             f"{sync_status}"
         )
         await state.finish()
 
     except Exception as e:
-        logging.error(f"Errore Finale: {e}")
-        await message.answer("Errore durante la conferma. Riprova.")
+        print(f"ERRORE CRITICO: {e}") # Guarda questo nei log di Railway!
+        await message.answer("Si è verificato un errore durante il salvataggio. Riprova.")
     finally:
         db.close()
