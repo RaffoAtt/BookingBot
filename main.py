@@ -24,11 +24,23 @@ dp.register_callback_query_handler(process_date, lambda c: c.data.startswith('da
 
 @app.on_event("startup")
 async def on_startup():
-    # Rimuove eventuali doppioni di protocollo e imposta il webhook
-    if BASE_URL:
-        webhook_url = f"{BASE_URL.rstrip('/')}/webhook"
-        await bot.set_webhook(webhook_url)
-        print(f"Webhook impostato su: {webhook_url}")
+@app.on_event("startup")
+async def on_startup():
+    print("Avvio della procedura di startup...")
+    try:
+        if BASE_URL:
+            # Pulizia dell'URL per evitare errori di formattazione
+            clean_url = BASE_URL.strip().rstrip('/')
+            webhook_url = f"{clean_url}/webhook"
+            
+            print(f"Tentativo di impostare il Webhook su: {webhook_url}")
+            await bot.set_webhook(webhook_url)
+            print("✅ Webhook impostato con successo!")
+        else:
+            print("⚠️ ATTENZIONE: BASE_URL non configurato nelle variabili d'ambiente.")
+    except Exception as e:
+        print(f"❌ ERRORE CRITICO durante set_webhook: {e}")
+        # Non rilanciamo l'errore, così il server FastAPI resta vivo (niente 502)
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
