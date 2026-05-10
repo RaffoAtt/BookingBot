@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, String, Integer, DateTime, ForeignKey, JSON
+from sqlalchemy import create_engine, Column, String, Integer, DateTime, ForeignKey, JSON,Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB  # <--- AGGIUNGI QUESTA RIGA
