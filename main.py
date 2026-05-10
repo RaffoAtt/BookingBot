@@ -49,6 +49,21 @@ def home():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)        data = await request.json()
+        update = types.Update.to_object(data)
+        Bot.set_current(bot)
+        Dispatcher.set_current(dp)
+        await dp.process_update(update)
+    except Exception as e:
+        print(f"Update Error: {e}")
+    return {"status": "ok"}
+
+@app.get("/")
+def home():
+    return {"status": "online"}
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)@app.get("/")
 def index():
     return {"status": "online"}
