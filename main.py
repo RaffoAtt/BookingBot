@@ -1,8 +1,10 @@
 import os
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, RedirectResponse
 from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from app.services.google_cal import get_auth_url, fetch_token
+from app.database import SessionLocal, Business
 
 # 1. Importa i nuovi handler inclusa la parte del telefono
 from app.bot.handlers import (
@@ -92,6 +94,34 @@ async def telegram_webhook(request: Request):
     except Exception as e:
         print(f"Update Error: {e}")
     return {"status": "ok"}
+
+@app.get("/auth/google")
+async def auth_google():
+    """Inizia il processo di login Google"""
+    auth_url = get_auth_url()
+    return RedirectResponse(auth_url)
+
+@app.get("/auth/callback")
+async def auth_callback(code: str):
+    """Riceve il codice da Google e salva il Token nel DB"""
+    try:
+        # 1. Scambia il codice con il Token (JSON)
+        token_data = fetch_token(code)
+        
+        # 2. Salva il Token nel database (nella tabella Business)
+        db = SessionLocal()
+        biz = db.query(Business).first()
+        if biz:
+            biz.google_creds = token_data
+            db.commit()
+            db.close()
+            return {"status": "success", "message": "Autenticazione completata! Il bot ora può scrivere sul calendario."}
+        else:
+            db.close()
+            return {"status": "error", "message": "Nessun business trovato nel DB. Configura prima il bot."}
+            
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 @app.get("/")
 def home():
