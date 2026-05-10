@@ -40,7 +40,8 @@ def index():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)        print("✅ Webhook impostato correttamente")
+    uvicorn.run(app, host="0.0.0.0", port=port)        
+    print("✅ Webhook impostato correttamente")
     except Exception as e:
         print(f"❌ Errore durante set_webhook: {e}")
 
@@ -91,7 +92,8 @@ if __name__ == "__main__":
     # Railway assegna la porta dinamicamente
     port_env = os.environ.get("PORT", "8000")
     print(f"Server in ascolto sulla porta: {port_env}")
-    uvicorn.run(app, host="0.0.0.0", port=int(port_env))            print("⚠️ BASE_URL non trovato nelle variabili d'ambiente.")
+    uvicorn.run(app, host="0.0.0.0", port=int(port_env))            
+print("⚠️ BASE_URL non trovato nelle variabili d'ambiente.")
     except Exception as e:
         print(f"❌ Errore durante set_webhook: {e}")
 
