@@ -1,12 +1,13 @@
-from aiogram import Dispatcher, types
+from aiogram import types
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
-# AGGIUNGI QUESTA RIGA:
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton 
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from datetime import datetime, timedelta
+
+# Import dai moduli del tuo progetto
 from app.database import SessionLocal, Service, Business
 from app.services import google_cal, scheduler
-# MODIFICA QUESTA RIGA per aggiungere timedelta:
-from datetime import datetime, timedelta
+from .keyboards import get_services_kb, get_slots_kb
 
 class BookingStates(StatesGroup):
     choosing_service = State()
@@ -15,38 +16,91 @@ class BookingStates(StatesGroup):
     entering_name = State()
 
 async def cmd_start(message: types.Message):
-    # In un sistema multi-tenant, identifichiamo il business dal token del bot usato
-    # Qui semplificato: prendiamo il primo business per test
     db = SessionLocal()
-    services = db.query(Service).all()
-    from .keyboards import get_services_kb
-    await message.answer("Benvenuto! Scegli un servizio:", reply_markup=get_services_kb(services))
-    await BookingStates.choosing_service.set()
+    try:
+        services = db.query(Service).all()
+        if not services:
+            await message.answer("Al momento non ci sono servizi disponibili.")
+            return
+            
+        await message.answer(
+            "Benvenuto! Scegli un servizio per iniziare la prenotazione:", 
+            reply_markup=get_services_kb(services)
+        )
+        await BookingStates.choosing_service.set()
+    finally:
+        db.close()
 
 async def process_service(callback_query: types.CallbackQuery, state: FSMContext):
+    # Estraiamo l'ID del servizio dalla callback (es: srv_1)
     service_id = callback_query.data.split("_")[1]
     await state.update_data(service_id=service_id)
     
-    # Ora InlineKeyboardMarkup funzionerà perché è stato importato sopra
-    kb = InlineKeyboardMarkup().add(
+    # Creazione tastiera per la scelta della data
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
         InlineKeyboardButton("Oggi", callback_data="date_today"),
         InlineKeyboardButton("Domani", callback_data="date_tomorrow")
     )
-    await callback_query.message.answer("Per quale giorno vuoi prenotare?", reply_markup=kb)
+    
+    await callback_query.message.answer(
+        "Ottima scelta! Per quale giorno vuoi prenotare?", 
+        reply_markup=kb
+    )
     await BookingStates.choosing_date.set()
+    await callback_query.answer()
 
 async def process_date(callback_query: types.CallbackQuery, state: FSMContext):
-    selected_date = datetime.now() if "today" in callback_query.data else datetime.now() + timedelta(days=1)
-    await state.update_data(date=selected_date.strftime("%Y-%m-%d"))
+    # Calcolo della data selezionata
+    if "today" in callback_query.data:
+        selected_date = datetime.now()
+    else:
+        selected_date = datetime.now() + timedelta(days=1)
     
-    # Recupero dati per calcolo slot
+    date_str = selected_date.strftime("%Y-%m-%d")
+    await state.update_data(date=date_str)
+    
     db = SessionLocal()
-    biz = db.query(Business).first() # In produzione: filtra per business_id
-    busy = google_cal.fetch_busy_slots(biz.google_creds, selected_date)
-    slots = scheduler.get_available_slots(biz.opening_hours["mon"], busy, 30) # 30 min default
-    
-    from .keyboards import get_slots_kb
-    await callback_query.message.answer("Scegli l'orario:", reply_markup=get_slots_kb(slots, selected_date.strftime("%Y-%m-%d")))
-    await BookingStates.choosing_time.set()
+    try:
+        # Recupero del business (assicurati che esista almeno un record in questa tabella)
+        biz = db.query(Business).first()
+        
+        # Validazione dati per evitare 'NoneType' object has no attribute 'keys'
+        if not biz or not biz.opening_hours:
+            await callback_query.message.answer("Errore: Orari del locale non configurati correttamente.")
+            return
 
-# ... Altri handler per nome e conferma finale ...
+        # Recupero impegni da Google Calendar
+        # Nota: busy sarà None o [] se le credenziali mancano o sono errate
+        busy = []
+        if biz.google_creds:
+            try:
+                busy = google_cal.fetch_busy_slots(biz.google_creds, selected_date)
+            except Exception as e:
+                print(f"Google API Error: {e}")
+
+        # Calcolo slot disponibili (assicurati che il dizionario abbia le chiavi dei giorni)
+        day_name = selected_date.strftime("%a").lower()[:3] # es: 'mon', 'tue'
+        day_schedule = biz.opening_hours.get(day_name)
+
+        if not day_schedule:
+            await callback_query.message.answer(f"Spiacenti, il locale è chiuso il giorno {date_str}.")
+            return
+
+        slots = scheduler.get_available_slots(day_schedule, busy, 30)
+        
+        if not slots:
+            await callback_query.message.answer("Non ci sono orari disponibili per questa data.")
+        else:
+            await callback_query.message.answer(
+                f"Orari disponibili per il {date_str}:", 
+                reply_markup=get_slots_kb(slots, date_str)
+            )
+            await BookingStates.choosing_time.set()
+            
+    except Exception as e:
+        print(f"Error in process_date: {e}")
+        await callback_query.message.answer("Si è verificato un errore tecnico nel recupero degli orari.")
+    finally:
+        db.close()
+        await callback_query.answer()
