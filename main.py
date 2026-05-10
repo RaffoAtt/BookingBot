@@ -6,7 +6,7 @@ from app.bot.handlers import cmd_start, process_service, process_date, BookingSt
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 
 app = FastAPI()
-bot = Bot(token="8794293727:AAHhEzMQioo1bpQqIuVUbBs1sX8bG8osWko")
+bot = os.getenv("MASTER_BOT_TOKEN")
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 
