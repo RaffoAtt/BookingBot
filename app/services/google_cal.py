@@ -9,7 +9,7 @@ SCOPES = ['https://www.googleapis.com/auth/calendar.events', 'https://www.google
 
 def get_flow():
     """Configura il flusso di autenticazione usando le variabili d'ambiente di Railway."""
-    return Flow.from_client_config(
+    flow = Flow.from_client_config(
         {
             "web": {
                 "client_id": os.getenv("GOOGLE_CLIENT_ID"),
@@ -21,18 +21,26 @@ def get_flow():
         scopes=SCOPES,
         redirect_uri=os.getenv("GOOGLE_REDIRECT_URI")
     )
+    return flow
 
 def get_auth_url():
-    """Genera l'URL da cliccare per autorizzare il bot."""
     flow = get_flow()
-    # prompt='consent' assicura di ricevere il refresh_token per non dover rifare il login ogni ora
-    auth_url, _ = flow.authorization_url(prompt='consent', access_type='offline')
+    # Generiamo l'URL. Google_auth_oauthlib gestirà internamente il verifier 
+    # se non specifichiamo nulla, ma nelle app web "stateless" può dare problemi.
+    auth_url, _ = flow.authorization_url(
+        prompt='consent', 
+        access_type='offline',
+        include_granted_scopes='true'
+    )
     return auth_url
 
 def fetch_token(code):
     """Scambia il codice ricevuto dal browser con i token reali."""
     flow = get_flow()
-    flow.fetch_token(code=code)
+    # Questa è la riga cruciale: fetch_token deve ricevere il codice 
+    # senza aspettarsi un verifier salvato in memoria locale che non esiste più
+    flow.fetch_token(code=code) 
+    
     creds = flow.credentials
     return {
         'token': creds.token,
