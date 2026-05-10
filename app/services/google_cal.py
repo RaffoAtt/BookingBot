@@ -6,41 +6,35 @@ from googleapiclient.discovery import build
 
 # Gli SCOPES devono corrispondere a quelli messi nella Google Console
 SCOPES = ['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/calendar.readonly']
+REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
 
 def get_flow():
     """Configura il flusso di autenticazione usando le variabili d'ambiente di Railway."""
-    flow = Flow.from_client_config(
-        {
-            "web": {
-                "client_id": os.getenv("GOOGLE_CLIENT_ID"),
-                "client_secret": os.getenv("GOOGLE_CLIENT_SECRET"),
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-            }
-        },
-        scopes=SCOPES,
-        redirect_uri=os.getenv("GOOGLE_REDIRECT_URI")
+    client_config = {
+        "web": {
+            "client_id": os.getenv("GOOGLE_CLIENT_ID"),
+            "client_secret": os.getenv("GOOGLE_CLIENT_SECRET"),
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+        }
+    }
+    # Creiamo il flow specificando esplicitamente il redirect_uri
+    return Flow.from_client_config(
+        client_config,
+        scopes=['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/calendar.readonly'],
+        redirect_uri=REDIRECT_URI
     )
-    return flow
 
 def get_auth_url():
     flow = get_flow()
-    # Generiamo l'URL. Google_auth_oauthlib gestirà internamente il verifier 
-    # se non specifichiamo nulla, ma nelle app web "stateless" può dare problemi.
-    auth_url, _ = flow.authorization_url(
-        prompt='consent', 
-        access_type='offline',
-        include_granted_scopes='true'
-    )
+    # Genera l'URL. Google richiede state per sicurezza.
+    auth_url, state = flow.authorization_url(prompt='consent', access_type='offline')
     return auth_url
 
 def fetch_token(code):
-    """Scambia il codice ricevuto dal browser con i token reali."""
     flow = get_flow()
-    # Questa è la riga cruciale: fetch_token deve ricevere il codice 
-    # senza aspettarsi un verifier salvato in memoria locale che non esiste più
-    flow.fetch_token(code=code) 
-    
+    # Fondamentale: fetch_token deve ricostruire lo stesso contesto
+    flow.fetch_token(code=code)
     creds = flow.credentials
     return {
         'token': creds.token,
