@@ -1,9 +1,15 @@
 fastapi
 uvicorn
+# Forza una versione specifica di aiohttp compatibile con aiogram 2.x
 aiogram==2.25.1
+aiohttp==3.8.6
+# Database
 sqlalchemy
 psycopg2-binary
+# Utility
 python-dotenv
+# Google API
 google-api-python-client
 google-auth-oauthlib
-aiohttp==3.8.6
+# Necessario per gestire i timeout e i DNS su sistemi Linux recenti
+aiodns
