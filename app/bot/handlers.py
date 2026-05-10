@@ -79,14 +79,24 @@ async def process_date(callback_query: types.CallbackQuery, state: FSMContext):
             except Exception as e:
                 print(f"Google API Error: {e}")
 
-        # Calcolo slot disponibili (assicurati che il dizionario abbia le chiavi dei giorni)
+# Calcolo slot disponibili
         day_name = selected_date.strftime("%a").lower()[:3] # es: 'mon', 'tue'
-        day_schedule = biz.opening_hours.get(day_name)
+        
+        # Gestione Robusta di opening_hours
+        if isinstance(biz.opening_hours, dict):
+            # Se è un dizionario: {"mon": ["09:00", "18:00"]}
+            day_schedule = biz.opening_hours.get(day_name)
+        elif isinstance(biz.opening_hours, list):
+            # Se è una lista: ["09:00", "18:00"] (valida per tutti i giorni)
+            day_schedule = biz.opening_hours
+        else:
+            day_schedule = None
 
         if not day_schedule:
             await callback_query.message.answer(f"Spiacenti, il locale è chiuso il giorno {date_str}.")
             return
 
+        # Passiamo i dati allo scheduler
         slots = scheduler.get_available_slots(day_schedule, busy, 30)
         
         if not slots:
