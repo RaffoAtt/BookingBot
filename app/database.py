@@ -38,16 +38,11 @@ class Booking(Base):
     business_id = Column(UUID(as_uuid=True), ForeignKey("businesses.id"))
     service_id = Column(UUID(as_uuid=True), ForeignKey("services.id"))
     customer_name = Column(String, nullable=False)
-    booking_date = Column(Date, nullable=False)  # <--- Assicurati che Date sia importato
-    start_time = Column(Time, nullable=False)    # <--- Assicurati che Time sia importato
-    end_time = Column(Time, nullable=False)      # <--- Assicurati che Time sia importato
-    status = Column(String, default="confirmed")
-
-def init_db():
-    Base.metadata.create_all(bind=engine)    start_time = Column(Time, nullable=False)
+    booking_date = Column(Date, nullable=False)
+    start_time = Column(Time, nullable=False)
     end_time = Column(Time, nullable=False)
     status = Column(String, default="confirmed")
-    
-# Funzione per creare le tabelle (da lanciare una volta)
+
+# --- FUNZIONE PER INIZIALIZZARE IL DB ---
 def init_db():
     Base.metadata.create_all(bind=engine)
