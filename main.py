@@ -1,10 +1,13 @@
 import os
 import uvicorn
-from fastapi import FastAPI, Request, RedirectResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import RedirectResponse  # Import corretto
 from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
+
+# Importa le funzioni dal tuo google_cal.py e il database
 from app.services.google_cal import get_auth_url, fetch_token
-from app.database import SessionLocal, Business
+from app.database import SessionLocal, Business, Booking
 
 # 1. Importa i nuovi handler inclusa la parte del telefono
 from app.bot.handlers import (
