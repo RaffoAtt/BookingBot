@@ -50,8 +50,12 @@ async def telegram_webhook(request: Request):
 def index():
     return {"message": "Booking Bot SaaS is running"}
 
+@app.get("/")
+def index():
+    return {"message": "Booking Bot SaaS is running"}
+
 if __name__ == "__main__":
-    # Railway assegna la porta automaticamente tramite la variabile PORT
+    # Prendi la porta assegnata da Railway
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Avvia il server
+    uvicorn.run(app, host="0.0.0.0", port=port)
